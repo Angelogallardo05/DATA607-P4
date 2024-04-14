@@ -1,0 +1,208 @@
+---
+title: "DATA 607 Project 4"
+author: "angel"
+date: "2024-04-13"
+output: html_document
+---
+
+
+
+# Task:using a corpus of labeled spam and ham (non-spam) e-mails to predict whether or not a new document is spam. Train SVM model for classification and predict the test data.
+
+# load library
+```{r}
+
+
+library(rvest)
+library(httr)
+library(tm)
+library(tidytext)
+library(RTextTools)
+library(knitr)
+library(tidyverse)
+library(wordcloud)
+library(e1071)
+
+```
+
+#load files from github desktop
+
+
+# Read ham and spam files into R ham=0 spam=1
+```{r}
+ham <- "/Users/angelgallardo/Documents/GitHub/DATA607-P4/easy_ham"
+
+hamfiles = list.files(ham)
+
+hamlist <- NA
+for(i in 1:length(hamfiles))
+{
+  filepath<-paste0(ham, "/", hamfiles[1])  
+  text <-readLines(filepath)
+  list1<- list(paste(text, collapse="\n"))
+  hamlist = c(hamlist,list1)
+  
+}
+
+# ham data frame
+hamDF <-as.data.frame(unlist(hamlist),stringsAsFactors = FALSE)
+hamDF$type <- "0"
+colnames(hamDF) <- c("text","type")
+
+# Create Spam Dataframe
+spam <- "/Users/angelgallardo/Documents/GitHub/DATA607-P4/spam"
+spamfiles = list.files(spam)
+
+spamlist <- NA
+for(i in 1:length(spamfiles))
+{
+  filepath<-paste0(spam, "/", spamfiles[1])  
+  text <-readLines(filepath)
+  list1<- list(paste(text, collapse="\n"))
+  spamlist = c(spamlist,list1)
+  
+}
+
+spamDF <-as.data.frame(unlist(spamlist),stringsAsFactors = FALSE)
+spamDF$type <- "1"
+colnames(spamDF) <- c("text","type")
+
+
+# creating combined data frame of spam and ham
+spam_ham_df <- rbind(hamDF, spamDF)
+```
+
+
+
+# prepare corpus and Preprocessing - remove numbers, puncuations, sotpwords and whitespace
+```{r}
+emails <- Corpus(VectorSource(spam_ham_df$text))
+cleanCorpus <- tm_map(emails, removeNumbers)
+cleanCorpus <- tm_map(cleanCorpus, removePunctuation)
+cleanCorpus <- tm_map(cleanCorpus, removeWords, stopwords())
+cleanCorpus <- tm_map(cleanCorpus, stripWhitespace)
+```
+
+
+# sample 80% data training and 30 % for prediction
+```{r}
+sample <- floor(0.80 * nrow(spam_ham_df))
+
+# set the seed to make your partition reproductible
+set.seed(555)
+train_ind <- sample(seq_len(nrow(spam_ham_df)), size = sample)
+
+train_spam_ham <- spam_ham_df[train_ind, ]
+test_spam_ham <- spam_ham_df[-train_ind, ]
+
+# count of spam and ham in train data set
+spam<-subset(train_spam_ham,train_spam_ham$type == "0")
+ham<-subset(train_spam_ham,train_spam_ham$type == "1")
+```
+
+
+
+# Create corpus for training and test data
+```{r}
+train_email_corpus <- Corpus(VectorSource(train_spam_ham$text))
+test_email_corpus <- Corpus(VectorSource(test_spam_ham$text))
+
+train_clean_corpus <- tm_map(train_email_corpus ,removeNumbers)
+test_clean_corpus <- tm_map(test_email_corpus, removeNumbers)
+
+train_clean_corpus <- tm_map(train_clean_corpus, removePunctuation)
+test_clean_corpus <- tm_map(test_clean_corpus, removePunctuation)
+
+train_clean_corpus <- tm_map(train_clean_corpus, removeWords, stopwords())
+test_clean_corpus  <- tm_map(test_clean_corpus, removeWords, stopwords())
+
+train_clean_corpus<- tm_map(train_clean_corpus, stripWhitespace)
+test_clean_corpus<- tm_map(test_clean_corpus, stripWhitespace)
+
+train_email_dtm <- DocumentTermMatrix(train_clean_corpus)
+test_email_dtm <- DocumentTermMatrix(test_clean_corpus)
+
+
+```
+
+
+
+# Train and predict using the SVM model 99% accuracy
+```{r}
+train_matrix <- as.matrix(train_email_dtm)
+
+# Extract labels from training data
+labels <- train_spam_ham$type  
+
+# Ensure labels are factors for classification
+labels <- as.factor(labels)
+
+# Train SVM model for classification
+svm_model <- svm(x = train_matrix, y = labels, kernel = "linear", cost = 1)
+
+
+# Convert Document-Term Matrix of test data to matrix
+test_matrix <- as.matrix(test_email_dtm)
+
+# Make predictions on test data using the trained SVM model
+predictions <- predict(svm_model, newdata = test_matrix)
+
+# Evaluate model performance (e.g., accuracy)
+accuracy <- mean(predictions == test_spam_ham$type)
+cat("Accuracy:", accuracy, "\n")
+```
+
+
+# Test
+#(ham) 515 instances correctly predicted as class 0
+#(spam): 1 instance incorrectly predicted as class 0,
+# and 95 instances correctly predicted as class 1
+```{r}
+# Create confusion matrix
+conf_matrix <- table(Actual = test_spam_ham$type, Predicted = predictions)
+print(conf_matrix)
+
+# Calculate precision, recall, and F1-score
+precision <- conf_matrix[2, 2] / sum(conf_matrix[, 2])
+recall <- conf_matrix[2, 2] / sum(conf_matrix[2, ])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+cat("Precision:", precision, "\n")
+cat("Recall (Sensitivity):", recall, "\n")
+cat("F1-score:", f1_score, "\n")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+#ham word cloud
+
+
+```{r}
+dtm <- DocumentTermMatrix(cleanCorpus)
+
+# Ham word cloud
+ham_indices <- which(spam_ham_df$type == "0") 
+suppressWarnings(wordcloud(cleanCorpus[ham_indices], min.freq=40))
+```
+
+
+#spam word cloud
+```{r}
+dtm <- DocumentTermMatrix(cleanCorpus)
+
+# spam word cloud
+spam_indices <- which(spam_ham_df$type == "1") 
+suppressWarnings(wordcloud(cleanCorpus[spam_indices], min.freq=40))
+```
+
+
+# conclusion
+**Test had a 98% accuracy. All of the ham intances were correctly predicted while only 1 of the spam instance was classified as not a spam **
